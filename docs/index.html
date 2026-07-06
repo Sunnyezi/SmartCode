@@ -7,10 +7,12 @@
   <title data-i18n="page_title">MiniCode | AI-powered terminal coding assistant</title>
   <meta name="description" content="MiniCode is a lightweight terminal coding assistant for local development workflows. Model-tool-loop, secure approvals, resumable sessions, snip compact, context collapse, Skills & MCP.">
   
-  <!-- Typography: Editorial Serif + Clean Sans -->
+  <!-- Typography: Editorial Serif + Clean Sans + CJK -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,200..800;1,6..72,200..800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,200..800;1,6..72,200..800&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@300;400;500;600&family=Noto+Serif+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <!-- LXGW WenKai: a warm, editorial Chinese serif that pairs with Newsreader -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css">
   
   <style>
     /* Premium Editorial / Modern Tech Light Theme */
@@ -31,8 +33,8 @@
       --accent-hover: #B54E38;
       
       /* Typography */
-      --font-sans: "Inter", "Noto Sans SC", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      --font-serif: "Newsreader", Georgia, "Times New Roman", serif;
+      --font-sans: "Inter", "LXGW WenKai", "Noto Sans SC", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      --font-serif: "Newsreader", "LXGW WenKai", "Noto Serif SC", Georgia, "Times New Roman", serif;
       --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
       
       /* Radii */
@@ -236,6 +238,33 @@
     .hero h1 em {
       font-style: italic;
       color: var(--accent);
+    }
+
+    /* ---- CJK editorial tuning (zh-CN) ----
+       Keep the serif editorial aesthetic, but fix the things that make
+       Chinese look bad when paired with English headings:
+         - Browser "synthetic italic" (skew) distorts CJK glyphs  -> drop italics,
+           use accent color + weight instead for emphasis.
+         - Negative letter-spacing (designed for Latin glyphs) crams CJK     -> open up.
+         - Tight line-height reads cramped for CJK serif                    -> loosen.
+         - LXGW WenKai has a softer stroke and pairs visually with Newsreader.
+    */
+    html[lang^="zh"] .hero h1 {
+      font-weight: 500;
+      letter-spacing: 0;
+      line-height: 1.3;
+    }
+    html[lang^="zh"] .hero h1 em {
+      font-style: normal;
+      font-weight: 600;
+      color: var(--accent);
+    }
+    html[lang^="zh"] [style*="--font-serif"] {
+      line-height: 1.45;
+    }
+    html[lang^="zh"] h2[data-i18n="why_title"] em,
+    html[lang^="zh"] [style*="--font-serif"] em {
+      font-style: normal;
     }
 
     .hero p {
