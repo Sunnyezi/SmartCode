@@ -43,6 +43,25 @@ describe('getModelContextWindow', () => {
     assert.equal(result.outputReserve, 4_000)
   })
 
+  it('returns MiniMax-M3 window with one-million context', () => {
+    const result = getModelContextWindow('MiniMax-M3')
+    assert.equal(result.contextWindow, 1_000_000)
+    assert.equal(result.outputReserve, 16_000)
+    assert.equal(result.effectiveInput, 1_000_000 - 16_000)
+  })
+
+  it('returns MiniMax-M2.7 window', () => {
+    const result = getModelContextWindow('MiniMax-M2.7')
+    assert.equal(result.contextWindow, 204_800)
+    assert.equal(result.outputReserve, 16_000)
+    assert.equal(result.effectiveInput, 204_800 - 16_000)
+  })
+
+  it('does not confuse MiniMax-M3 and MiniMax-M2.7', () => {
+    assert.equal(getModelContextWindow('MiniMax-M3').contextWindow, 1_000_000)
+    assert.equal(getModelContextWindow('MiniMax-M2.7').contextWindow, 204_800)
+  })
+
   it('returns default window for unknown model', () => {
     const result = getModelContextWindow('some-unknown-model-v1')
     assert.equal(result.contextWindow, 128_000)

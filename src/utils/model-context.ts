@@ -117,6 +117,16 @@ const MODEL_CONTEXT_RULES: ModelContextRule[] = [
     contextWindow: 128_000,
     outputReserve: 4_000,
   },
+  {
+    patterns: ['minimax-m3'],
+    contextWindow: 1_000_000,
+    outputReserve: 16_000,
+  },
+  {
+    patterns: ['minimax-m2.7'],
+    contextWindow: 204_800,
+    outputReserve: 16_000,
+  },
 ]
 
 export function getModelContextWindow(model: string): ModelContextWindow {
