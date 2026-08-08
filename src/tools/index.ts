@@ -16,6 +16,15 @@ import { webFetchTool } from './web-fetch.js'
 import { webSearchTool } from './web-search.js'
 import { writeFileTool } from './write-file.js'
 
+export const SUB_AGENT_TOOL_NAMES = [
+  'list_files',
+  'grep_files',
+  'read_file',
+  'load_skill',
+  'web_fetch',
+  'web_search',
+] as const
+
 function summarizeServerEndpoint(config: McpServerConfig): string {
   const remoteUrl = config.url?.trim()
   if (remoteUrl) return remoteUrl

@@ -63,6 +63,7 @@ import type { RuntimeConfig } from './config.js'
 import type { ToolRegistry } from './tool.js'
 import type { ChatMessage, CompressionResult, ModelAdapter } from './types.js'
 import type { ContextStats } from './utils/token-estimator.js'
+import type { SubAgentManager } from './agents/manager.js'
 import { computeContextStats } from './utils/token-estimator.js'
 import { manualCompact } from './compact/manual-compact.js'
 import { snipCompactConversation } from './compact/snipCompact.js'
@@ -81,6 +82,7 @@ type TtyAppArgs = {
   runtime: RuntimeConfig | null
   tools: ToolRegistry
   model: ModelAdapter
+  subAgents: SubAgentManager
   messages: ChatMessage[]
   cwd: string
   permissions: PermissionManager
@@ -774,6 +776,8 @@ function renderScreen(args: TtyAppArgs, state: ScreenState): void {
         backgroundTasks,
         state.compressionStatus,
         state.statusAnimationFrame,
+        undefined,
+        renderSubAgentFooter(args.subAgents),
       ),
     )
     renderTerminalFrame(frame.join('\n'))
@@ -811,6 +815,8 @@ function renderScreen(args: TtyAppArgs, state: ScreenState): void {
         backgroundTasks,
         state.compressionStatus,
         state.statusAnimationFrame,
+        undefined,
+        renderSubAgentFooter(args.subAgents),
       ),
     )
     renderTerminalFrame(frame.join('\n'))
@@ -846,9 +852,15 @@ function renderScreen(args: TtyAppArgs, state: ScreenState): void {
       state.compressionStatus,
       state.statusAnimationFrame,
       renderFooterStatus(state),
+      renderSubAgentFooter(args.subAgents),
     ),
   )
   renderTerminalFrame(frame.join('\n'))
+}
+
+function renderSubAgentFooter(manager: SubAgentManager): string | undefined {
+  if (manager.runningCount === 0) return undefined
+  return `\x1b[1m\x1b[35m● SUB-AGENTS ${manager.runningCount}/${manager.maxConcurrent} RUNNING\x1b[0m`
 }
 
 function createRenderScheduler(renderNow: () => void): () => void {
@@ -870,6 +882,7 @@ async function refreshSystemPrompt(args: TtyAppArgs): Promise<void> {
     content: await buildSystemPrompt(args.cwd, args.permissions.getSummary(), {
       skills: args.tools.getSkills(),
       mcpServers: args.tools.getMcpServers(),
+      subAgents: { maxConcurrent: args.subAgents.maxConcurrent },
     }),
   }
 }
@@ -1693,6 +1706,7 @@ export async function runTtyApp(args: TtyAppArgs): Promise<void> {
   const renderNow = () => renderScreen(permissionArgs, state)
   let scheduleRender = renderNow
   scheduleRender = createRenderScheduler(renderNow)
+  const unsubscribeSubAgents = permissionArgs.subAgents.subscribe(scheduleRender)
   await permissionArgs.permissions.whenReady()
   if (
     permissionArgs.messages.length === 0 ||
@@ -1776,6 +1790,7 @@ export async function runTtyApp(args: TtyAppArgs): Promise<void> {
       clearInterval(statusAnimationTimer)
       clearInterval(welcomeAnimationTimer)
       clearInterval(inputHintTimer)
+      unsubscribeSubAgents()
       process.stdin.off('data', onData)
       process.stdin.off('end', onEnd)
       process.stdin.off('close', onClose)

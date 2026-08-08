@@ -85,8 +85,22 @@ export type AgentStep =
       usage?: ProviderUsage
     }
 
+export type ModelToolDefinition = {
+  name: string
+  description: string
+  inputSchema: Record<string, unknown>
+}
+
+export type ModelRequestOptions = {
+  tools?: ModelToolDefinition[]
+  signal?: AbortSignal
+}
+
 export interface ModelAdapter {
-  next(messages: ChatMessage[]): Promise<AgentStep>
+  next(
+    messages: ChatMessage[],
+    options?: ModelRequestOptions,
+  ): Promise<AgentStep>
 }
 
 export type CompressionResult = {

@@ -15,6 +15,7 @@ import {
   type ContextCollapseResult,
   type ContextCollapseState,
 } from './compact/context-collapse.js'
+import { throwIfAborted } from './abort.js'
 import {
   snipCompactConversation,
   type SnipCompactResult,
@@ -127,6 +128,7 @@ export async function runAgentTurn(args: {
   onContextStats?: (stats: import('./utils/token-estimator.js').ContextStats) => void
   contentReplacementState?: ContentReplacementState
   contextCollapseState?: ContextCollapseState
+  signal?: AbortSignal
 }): Promise<ChatMessage[]> {
   const maxSteps = args.maxSteps
   const modelName = args.modelName ?? ''
@@ -172,6 +174,7 @@ export async function runAgentTurn(args: {
   }
 
   for (let step = 0; maxSteps == null || step < maxSteps; step++) {
+    throwIfAborted(args.signal)
     let latestStats: import('./utils/token-estimator.js').ContextStats | null = null
     let modelMessages = messages
 
@@ -235,7 +238,10 @@ export async function runAgentTurn(args: {
       }
     }
 
-    const next = await args.model.next(modelMessages)
+    const next = await args.model.next(modelMessages, {
+      tools: args.tools.list(),
+      signal: args.signal,
+    })
 
     if (next.type === 'assistant') {
       const isEmpty = isEmptyAssistantResponse(next.content)
@@ -378,6 +384,7 @@ export async function runAgentTurn(args: {
     }> = []
 
     for (const call of next.calls) {
+      throwIfAborted(args.signal)
       args.onToolStart?.(call.toolName, call.input)
       const result = await args.tools.execute(
         call.toolName,

@@ -59,4 +59,10 @@ export default [
       '@typescript-eslint/no-unused-vars': 'off',
     },
   },
+  {
+    files: ['test/**/*.mjs'],
+    languageOptions: {
+      globals: nodeGlobals,
+    },
+  },
 ]
