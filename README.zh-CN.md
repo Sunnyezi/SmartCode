@@ -123,6 +123,7 @@ MiniCode 适合你，如果你想要：
 ## 核心能力
 
 - 单轮支持多步工具执行，形成 `model -> tool -> model` 闭环。
+- 支持最多 3 个并发的只读 sub-agent；root agent 统一修改代码，并可等待或主动关闭 worker。
 - 提供全屏终端交互界面，支持输入历史、transcript 滚动、slash 命令菜单和审批交互。
 - 会话按项目隔离持久化，支持恢复、重命名、分叉和压缩。
 - 上下文统计优先使用 provider usage，并支持 tail estimate、自动压缩、上下文折叠和裁剪压缩。

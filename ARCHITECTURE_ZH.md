@@ -31,7 +31,7 @@ MiniCode 优先保留这些能力：
 - 完整 Ink/React 渲染栈
 - bridge / IDE 双向通信
 - remote session
-- task swarm / sub-agent 编排
+- 持久化 agent 定义、嵌套 agent 与更复杂的 task swarm 编排（最小 sub-agent runtime 已实现）
 - LSP
 - skill marketplace
 - 复杂 permission 模式
@@ -45,6 +45,9 @@ MiniCode 优先保留这些能力：
 
 - `src/index.ts`: CLI 入口
 - `src/agent-loop.ts`: 多轮工具调用循环
+- `src/agents/manager.ts`: 内存态 sub-agent 生命周期、并发上限、等待与取消
+- `src/agents/worker-prompt.ts`: 只读 worker 的最小系统提示词
+- `src/tools/sub-agents.ts`: root agent 使用的 `spawn_agent` / `list_agents` / `wait_agent` / `close_agent`
 - `src/tool.ts`: 注册、校验、执行
 - `src/tools/*`: `list_files` / `grep_files` / `read_file` / `write_file` / `edit_file` / `patch_file` / `modify_file` / `run_command` / `web_fetch` / `web_search` / `ask_user` / `load_skill`
 - `src/config.ts`: 使用独立的 `~/.mini-code`
@@ -75,6 +78,18 @@ MiniCode 的运行时状态有意保持简单：
 - 本地 token 估算只作为 provider usage 缺失时的 fallback，或作为最新 provider usage boundary 之后新增消息的 tail estimate。
 - 超大工具输出会被移出 prompt context，保存到 `~/.mini-code/tool-results/`，模型只看到预览和完整输出路径。
 
+## Multi-agent MVP
+
+MiniCode 的 multi-agent 实现刻意保持为一个可读的最小闭环：
+
+1. root agent 调用 `spawn_agent` 创建内存态 worker；每个 worker 有独立的消息数组和 `AbortController`。
+2. worker 与 root 共用同一个模型适配器，但每次模型请求都显式传入自己的工具列表。worker 只拥有 `list_files`、`grep_files`、`read_file`、`load_skill`、`web_fetch` 和 `web_search`。
+3. worker 不能写文件、执行命令、询问用户或继续创建 agent；所有代码修改都由 root agent 完成。
+4. 同时最多有 3 个 `running` worker。`wait_agent` 收集报告，`close_agent` 会取消正在进行的模型请求，并阻止 worker 进入下一个工具或模型步骤。
+5. TUI 底栏在 worker 运行时显示醒目的 `SUB-AGENTS n/3 RUNNING` 状态。主 TUI 仍保持单前台回合的交互模型。
+
+这个 MVP 暂不持久化 worker，不读取 `.claude/agents`，不允许嵌套 agent，也不实现工作树隔离或用户实时 steering。这样可以把教学重点放在“独立上下文 + 受限工具集 + 后台 Promise + 生命周期控制”四个核心概念上。
+
 ## 为什么适合学习
 
 MiniCode 的一个优势，是用更轻量的实现方式，提供了类 Claude Code 的功能体验和核心架构思路。
@@ -83,6 +98,7 @@ MiniCode 的一个优势，是用更轻量的实现方式，提供了类 Claude 
 
 - 学习 terminal coding agent 的基本组成
 - 研究 tool-calling loop
+- 理解 root/worker 的上下文隔离、工具隔离和取消机制
 - 理解权限审批和文件 review 流程
 - 理解如何在不引入重型插件平台的情况下接入 skills 和 MCP
 - 理解一种更接近 Claude Code 的“前台工具执行 / 后台 shell task”区分方式

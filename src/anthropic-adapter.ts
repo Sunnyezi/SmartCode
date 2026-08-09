@@ -2,6 +2,7 @@ import type { ToolRegistry } from './tool.js'
 import type {
   ChatMessage,
   ModelAdapter,
+  ModelRequestOptions,
   ProviderThinkingBlock,
   ProviderUsage,
   StepDiagnostics,
@@ -10,6 +11,7 @@ import type {
 import type { RuntimeConfig } from './config.js'
 import { resolveMaxOutputTokens } from './utils/context.js'
 import { buildAnthropicSnipBoundaryText } from './compact/snipCompact.js'
+import { abortableDelay, throwIfAborted } from './abort.js'
 
 const DEFAULT_MAX_RETRIES = 4
 const BASE_RETRY_DELAY_MS = 500
@@ -31,12 +33,6 @@ type AnthropicUsage = {
   output_tokens?: number
   cache_creation_input_tokens?: number
   cache_read_input_tokens?: number
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => {
-    setTimeout(resolve, Math.max(0, ms))
-  })
 }
 
 function getRetryLimit(): number {
@@ -307,7 +303,11 @@ export class AnthropicModelAdapter implements ModelAdapter {
     private readonly getRuntimeConfig: () => Promise<RuntimeConfig>,
   ) {}
 
-  async next(messages: ChatMessage[]) {
+  async next(
+    messages: ChatMessage[],
+    options: ModelRequestOptions = {},
+  ) {
+    throwIfAborted(options.signal)
     const runtime = await this.getRuntimeConfig()
     const payload = toAnthropicMessages(messages)
     const url = `${runtime.baseUrl.replace(/\/$/, '')}/v1/messages`
@@ -331,7 +331,7 @@ export class AnthropicModelAdapter implements ModelAdapter {
       model: runtime.model,
       system: payload.system,
       messages: payload.messages,
-      tools: this.tools.list().map(tool => ({
+      tools: (options.tools ?? this.tools.list()).map(tool => ({
         name: tool.name,
         description: tool.description,
         input_schema: tool.inputSchema,
@@ -346,6 +346,7 @@ export class AnthropicModelAdapter implements ModelAdapter {
         method: 'POST',
         headers,
         body: JSON.stringify(requestBody),
+        signal: options.signal,
       })
       if (response.ok) {
         break
@@ -354,7 +355,10 @@ export class AnthropicModelAdapter implements ModelAdapter {
         break
       }
       const retryAfterMs = parseRetryAfterMs(response.headers.get('retry-after'))
-      await sleep(getRetryDelayMs(attempt + 1, retryAfterMs))
+      await abortableDelay(
+        getRetryDelayMs(attempt + 1, retryAfterMs),
+        options.signal,
+      )
     }
 
     if (!response) {

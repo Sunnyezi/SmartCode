@@ -31,7 +31,7 @@ In other words, MiniCode is a smaller, more controllable terminal coding assista
 - Full Ink/React rendering stack
 - Bridge / IDE two-way communication
 - Remote session
-- Task swarm / sub-agent orchestration
+- Persistent agent definitions, nested agents, and more advanced task-swarm orchestration (the minimal sub-agent runtime is implemented)
 - LSP
 - Skill marketplace
 - More complex permission modes
@@ -43,6 +43,9 @@ In other words, MiniCode is a smaller, more controllable terminal coding assista
 
 - `src/index.ts`: CLI entry
 - `src/agent-loop.ts`: multi-turn tool-calling loop
+- `src/agents/manager.ts`: in-memory sub-agent lifecycle, concurrency limit, waiting, and cancellation
+- `src/agents/worker-prompt.ts`: minimal read-only worker system prompt
+- `src/tools/sub-agents.ts`: root-only `spawn_agent`, `list_agents`, `wait_agent`, and `close_agent` tools
 - `src/tool.ts`: registration, validation, execution
 - `src/tools/*`: `list_files` / `grep_files` / `read_file` / `write_file` / `edit_file` / `patch_file` / `modify_file` / `run_command` / `web_fetch` / `web_search` / `ask_user` / `load_skill`
 - `src/config.ts`: uses dedicated `~/.mini-code`
@@ -73,6 +76,18 @@ MiniCode keeps runtime state deliberately simple:
 - Local token estimation is only a fallback or a tail estimate after the latest provider usage boundary.
 - Very large tool outputs are moved out of the prompt context and stored under `~/.mini-code/tool-results/`, leaving the model a preview and a path to the full output.
 
+## Multi-agent MVP
+
+The multi-agent implementation is intentionally a small, readable loop:
+
+1. The root calls `spawn_agent` to create an in-memory worker. Each worker has its own message array and `AbortController`.
+2. Workers share the model adapter with the root, but every model request receives an explicit tool list. Workers only get file search/read, skill loading, and web research tools.
+3. Workers cannot edit files, run commands, ask the user, or create more agents. The root owns every code change.
+4. At most 3 workers may be `running`. `wait_agent` collects reports; `close_agent` aborts an active model request and prevents another tool or model step.
+5. While workers run, the TUI footer shows `SUB-AGENTS n/3 RUNNING`. The foreground interaction model remains unchanged.
+
+This MVP does not persist workers, load `.claude/agents`, support nesting, isolate worktrees, or allow live user steering. Its teaching focus is the four essential ideas: isolated context, restricted tools, background promises, and lifecycle control.
+
 ## Why it is good for learning
 
 One strength of MiniCode is that it delivers Claude Code–like behavior and core architectural ideas in a much lighter implementation.
@@ -81,6 +96,7 @@ That makes it well suited to:
 
 - Learning the basic pieces of a terminal coding agent
 - Studying tool-calling loops
+- Understanding root/worker context isolation, tool isolation, and cancellation
 - Understanding permission approval and file review flows
 - Seeing how skills and external MCP tools can be added without a heavy plugin platform
 - Seeing a lightweight Claude Code-style distinction between foreground tool execution and background shell tasks

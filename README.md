@@ -123,6 +123,7 @@ MiniCode is a good fit if you want:
 ## Core Capabilities
 
 - Multi-step tool execution in a single turn, forming a `model -> tool -> model` loop.
+- Up to 3 concurrent read-only sub-agents; the root agent owns all code changes and can wait for or close workers.
 - Full-screen terminal UI with input history, transcript scrolling, slash command menu, and approval flows.
 - Per-project session persistence with resume, rename, fork, and compact commands.
 - Provider-usage-first context stats with tail estimates, auto-compact, context collapse, and snip compact.

@@ -58,6 +58,13 @@ export class ToolRegistry {
     return this.toolsStore
   }
 
+  subset(names: readonly string[]): ToolRegistry {
+    const allowedNames = new Set(names)
+    return new ToolRegistry(
+      this.toolsStore.filter(tool => allowedNames.has(tool.name)),
+    )
+  }
+
   getSkills(): SkillSummary[] {
     return this.metadataStore.skills ?? []
   }

@@ -93,9 +93,9 @@ This should stay simple and should not become a heavyweight planning subsystem.
 
 ### 8. `.claude/agents` and sub-agent support
 
-This is an important capability, but it also adds complexity.
+The minimal version is implemented: the root agent can run up to 3 read-only workers concurrently and manage them with `list_agents`, `wait_agent`, and `close_agent`. Workers have isolated context and a restricted tool set; the root remains the only code editor.
 
-It is worth doing after the core runtime is more stable.
+Future work may add persistent `.claude/agents` definitions, richer scheduling, and more detailed progress reporting. Nested agents and worktree isolation are outside the current teaching MVP.
 
 ### 9. Expand the core toolset selectively
 

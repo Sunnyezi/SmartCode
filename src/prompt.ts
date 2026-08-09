@@ -8,6 +8,7 @@ export async function buildSystemPrompt(
   extras?: {
     skills?: SkillSummary[]
     mcpServers?: McpServerSummary[]
+    subAgents?: { maxConcurrent: number }
   },
 ): Promise<string> {
   const parts = [
@@ -32,6 +33,17 @@ export async function buildSystemPrompt(
 
   if (permissionSummary.length > 0) {
     parts.push(`Permission context:\n${permissionSummary.join('\n')}`)
+  }
+
+  if (extras?.subAgents) {
+    parts.push([
+      'Sub-agent coordination:',
+      `- You may run at most ${extras.subAgents.maxConcurrent} read-only sub-agents concurrently with spawn_agent.`,
+      '- Delegate only independent investigation tasks. Sub-agents have separate message histories and cannot modify code or spawn more agents.',
+      '- You are the root agent and the only agent allowed to edit files or run commands that change the project.',
+      '- Use wait_agent to collect reports. Use close_agent when an agent is looping, no longer useful, or should stop consuming model calls.',
+      '- Before giving a final answer, collect the reports you need and close any sub-agents that are still running.',
+    ].join('\n'))
   }
 
   const skills = extras?.skills ?? []

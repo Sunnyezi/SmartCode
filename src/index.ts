@@ -14,7 +14,13 @@ import { summarizeMcpServers } from './mcp-status.js'
 import { MockModelAdapter } from './mock-model.js'
 import { PermissionManager } from './permissions.js'
 import { buildSystemPrompt } from './prompt.js'
-import { createDefaultToolRegistry, hydrateMcpTools } from './tools/index.js'
+import {
+  createDefaultToolRegistry,
+  hydrateMcpTools,
+  SUB_AGENT_TOOL_NAMES,
+} from './tools/index.js'
+import { createSubAgentTools } from './tools/sub-agents.js'
+import { SubAgentManager } from './agents/manager.js'
 import type { ChatMessage } from './types.js'
 import { renderBanner } from './ui.js'
 import { runTtyApp } from './tty-app.js'
@@ -82,12 +88,19 @@ async function main(): Promise<void> {
     process.env.MINI_CODE_MODEL_MODE === 'mock'
       ? new MockModelAdapter()
       : new AnthropicModelAdapter(tools, loadRuntimeConfig)
+  const subAgents = new SubAgentManager({
+    model,
+    tools: tools.subset(SUB_AGENT_TOOL_NAMES),
+    cwd,
+  })
+  tools.addTools(createSubAgentTools(subAgents))
   let messages: ChatMessage[] = [
     {
       role: 'system',
       content: await buildSystemPrompt(cwd, permissions.getSummary(), {
         skills: tools.getSkills(),
         mcpServers: tools.getMcpServers(),
+        subAgents: { maxConcurrent: subAgents.maxConcurrent },
       }),
     },
   ]
@@ -100,6 +113,7 @@ async function main(): Promise<void> {
       content: await buildSystemPrompt(cwd, permissions.getSummary(), {
         skills: tools.getSkills(),
         mcpServers: tools.getMcpServers(),
+        subAgents: { maxConcurrent: subAgents.maxConcurrent },
       }),
     }
   }
@@ -123,6 +137,7 @@ async function main(): Promise<void> {
         runtime,
         tools,
         model,
+        subAgents,
         messages,
         cwd,
         permissions,
@@ -278,6 +293,7 @@ async function main(): Promise<void> {
       // Ignore double-close during EOF teardown.
     }
   } finally {
+    await subAgents.closeAll()
     await mcpHydration
     await tools.dispose()
   }

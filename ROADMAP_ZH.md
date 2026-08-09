@@ -93,9 +93,9 @@ MiniCode 当前已经能接 Anthropic 风格接口和部分兼容供应商，但
 
 ### 8. `.claude/agents` 与 sub-agent 支持
 
-这是一个重要能力，但复杂度也会明显上升。
+最小版本已经实现：root agent 可并发启动最多 3 个只读 worker，并通过 `list_agents`、`wait_agent` 和 `close_agent` 管理生命周期。worker 使用独立上下文和受限工具集，所有代码修改仍由 root 完成。
 
-更适合在核心 runtime 更稳定之后推进。
+后续可继续支持 `.claude/agents` 持久化定义、更多调度策略和更细的进度展示；嵌套 agent 与工作树隔离不属于当前教学 MVP。
 
 ### 9. 有选择地扩充核心工具集
 
