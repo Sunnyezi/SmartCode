@@ -24,6 +24,8 @@ WORKDIR /build
 # Copy package source
 COPY pyproject.toml README.md ./
 COPY minicode/ ./minicode/
+COPY Main/ ./Main/
+COPY Package/ ./Package/
 
 # Install into a clean venv (keeps final image small)
 RUN python -m venv /opt/minicode-venv && \
@@ -73,4 +75,3 @@ USER minicode
 
 # Default entry: interactive CLI mode
 ENTRYPOINT ["minicode-py"]
-CMD ["--help"]

@@ -136,6 +136,19 @@ MODEL_PRICING = {
         "cache_read": 0.07,
         "cache_write": 0.14,
     },
+    # DeepSeek V4 models (official list prices, USD per 1M tokens).
+    "deepseek-v4-flash": {
+        "input": 0.14,
+        "output": 0.28,
+        "cache_read": 0.0028,
+        "cache_write": 0.14,
+    },
+    "deepseek-v4-pro": {
+        "input": 0.435,
+        "output": 0.87,
+        "cache_read": 0.003625,
+        "cache_write": 0.435,
+    },
     "qwen/qwen3-235b-a22b": {
         "input": 0.22,
         "output": 0.88,
@@ -182,12 +195,13 @@ def calculate_cost(
         Cost in USD
     """
     pricing = MODEL_PRICING.get(model, MODEL_PRICING["default"])
-    return (
-        (input_tokens / _DECIMAL_1M) * pricing["input"]
-        + (output_tokens / _DECIMAL_1M) * pricing["output"]
-        + (cache_read_tokens / _DECIMAL_1M) * pricing["cache_read"]
-        + (cache_creation_tokens / _DECIMAL_1M) * pricing["cache_write"]
+    cost = (
+        (Decimal(input_tokens) / _DECIMAL_1M) * Decimal(str(pricing["input"]))
+        + (Decimal(output_tokens) / _DECIMAL_1M) * Decimal(str(pricing["output"]))
+        + (Decimal(cache_read_tokens) / _DECIMAL_1M) * Decimal(str(pricing["cache_read"]))
+        + (Decimal(cache_creation_tokens) / _DECIMAL_1M) * Decimal(str(pricing["cache_write"]))
     )
+    return float(cost)
 
 
 # ---------------------------------------------------------------------------
