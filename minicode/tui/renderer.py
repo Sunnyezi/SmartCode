@@ -3,7 +3,6 @@ import sys
 import time
 from typing import Any
 from minicode.background_tasks import list_background_tasks
-from minicode.session import format_checkpoint_summary_line
 from minicode.tui.chrome import (
     _cached_terminal_size,
     render_banner,
@@ -17,9 +16,15 @@ from minicode.tui.chrome import (
     RESET,
 )
 from minicode.tui.input import render_input_prompt
-from minicode.tui.transcript import format_runtime_summary_line, render_transcript
+from minicode.tui.transcript import render_transcript
 from minicode.tui.state import TtyAppArgs, ScreenState
-from minicode.tui.navigation import _get_transcript_body_lines, _get_visible_commands
+from minicode.tui.navigation import (
+    _get_transcript_content_max_scroll_offset,
+    _get_transcript_body_lines,
+    _get_visible_commands,
+    _is_session_feed_compact,
+)
+from minicode.tui.session_feed import decorate_session_feed_body
 from minicode.tui.tool_helpers import _get_session_stats
 from minicode.tui.types import TranscriptEntry
 from minicode.tui.ui_hints import _get_contextual_help
@@ -39,7 +44,12 @@ _transcript_snapshot_cache: dict[
 ] = {}
 
 
-def _render_header_panel(args: TtyAppArgs, state: ScreenState) -> str:
+def _render_header_panel(
+    args: TtyAppArgs,
+    state: ScreenState,
+    *,
+    compact: bool = False,
+) -> str:
     """Render the top banner panel with model info, cwd, and session stats.
     
     The result is cached to avoid re-rendering when stats haven't changed.
@@ -53,6 +63,7 @@ def _render_header_panel(args: TtyAppArgs, state: ScreenState) -> str:
         stats.get("skillCount"),
         stats.get("mcpCount"),
         _cached_terminal_size(),
+        compact,
     )
     cached = _banner_cache.get("key")
     if cached and cached[0] == cache_key:
@@ -62,6 +73,7 @@ def _render_header_panel(args: TtyAppArgs, state: ScreenState) -> str:
         args.cwd,
         args.permissions.get_summary(),
         stats,
+        compact=compact,
     )
     _banner_cache["key"] = (cache_key, result)
     return result
@@ -131,6 +143,7 @@ def _compute_render_hash(args: TtyAppArgs, state: ScreenState) -> int:
     return hash((
         transcript_rev,
         scroll,
+        state.transcript_follow_tail,
         input_hash,
         cursor,
         status,
@@ -157,36 +170,31 @@ def _decorate_session_feed_body(
     transcript_entries: list[TranscriptEntry],
     session: Any | None = None,
 ) -> str:
-    checkpoint_summary_line = format_checkpoint_summary_line(session)
-    runtime_summary_line = format_runtime_summary_line(transcript_entries)
-    session_metadata = getattr(session, "metadata", None)
-    summary_lines = [
-        line
-        for line in (
-            checkpoint_summary_line,
-            runtime_summary_line,
-            f"readiness-summary: {session_metadata.readiness_summary}"
-            if session_metadata and getattr(session_metadata, "readiness_summary", "")
-            else "",
-            f"instruction-summary: {session_metadata.instruction_summary}"
-            if session_metadata and getattr(session_metadata, "instruction_summary", "")
-            else "",
-            f"hook-summary: {session_metadata.hook_summary}"
-            if session_metadata and getattr(session_metadata, "hook_summary", "")
-            else "",
-            f"delegation-summary: {session_metadata.delegation_summary}"
-            if session_metadata and getattr(session_metadata, "delegation_summary", "")
-            else "",
-            f"extension-summary: {session_metadata.extension_summary}"
-            if session_metadata and getattr(session_metadata, "extension_summary", "")
-            else "",
-        )
-        if line
-    ]
-    if not summary_lines:
-        return transcript_body
-    summary_block = f"{RESET}\n{SUBTLE}".join(summary_lines)
-    return f"{SUBTLE}{summary_block}{RESET}\n\n{transcript_body}"
+    return decorate_session_feed_body(transcript_body, transcript_entries, session)
+
+
+def _render_scrolling_workspace_view(
+    args: TtyAppArgs,
+    state: ScreenState,
+    feed_panel: str,
+    workspace_scroll: int,
+) -> str:
+    """Reveal Workspace above a fixed-size feed without resizing that feed.
+
+    At the true transcript top, extra upward scroll moves the whole panel
+    stack downward.  The Workspace card enters from above while the session
+    panel keeps its original height and is merely clipped at the viewport's
+    lower edge, as a normal scrolling document would be.
+    """
+    if workspace_scroll <= 0:
+        return feed_panel
+
+    workspace_lines = _render_header_panel(args, state).splitlines() + ["", ""]
+    reveal = min(workspace_scroll, len(workspace_lines))
+    feed_lines = feed_panel.splitlines()
+    return "\n".join(
+        workspace_lines[-reveal:] + feed_lines[: max(0, len(feed_lines) - reveal)]
+    )
 
 
 def _render_screen(args: TtyAppArgs, state: ScreenState) -> None:
@@ -201,17 +209,20 @@ def _render_screen(args: TtyAppArgs, state: ScreenState) -> None:
     
     background_tasks = list_background_tasks()
 
-    # 获取上下文帮助
-    contextual_help = _get_contextual_help(state, args)
-
     # Build the entire frame into a buffer, then write once
     buf: list[str] = []
     # CSI H + CSI J  (cursor home + erase to end) – avoids full clear flicker
     buf.append("\u001b[H\u001b[J")
 
-    # Header
-    buf.append(_render_header_panel(args, state))
-    buf.append("\n\n")
+    # Workspace and the feed remain separate cards.  Once accumulated history
+    # needs the Workspace rows, the feed expands once and keeps that geometry
+    # while the user scrolls; only an extra range above transcript history
+    # reveals the independent Workspace card.
+    feed_owns_viewport = _is_session_feed_compact(state) and not state.pending_approval
+    contextual_help = None if feed_owns_viewport else _get_contextual_help(state, args)
+    if not feed_owns_viewport:
+        buf.append(_render_header_panel(args, state))
+        buf.append("\n\n")
 
     has_skills = len(args.tools.get_skills()) > 0
 
@@ -248,28 +259,30 @@ def _render_screen(args: TtyAppArgs, state: ScreenState) -> None:
     # iteration + append can still race on length vs slot access).
     transcript_snapshot = _get_transcript_snapshot(state)
     body_lines = _get_transcript_body_lines(args, state)
+    transcript_content_max = _get_transcript_content_max_scroll_offset(args, state)
+    transcript_scroll = min(state.transcript_scroll_offset, transcript_content_max)
+    workspace_scroll = max(0, state.transcript_scroll_offset - transcript_content_max)
     if transcript_snapshot:
         transcript_body = render_transcript(
             transcript_snapshot,
-            state.transcript_scroll_offset,
+            transcript_scroll,
             body_lines,
             state.transcript_revision,
         )
-        transcript_body = _decorate_session_feed_body(
-            transcript_body,
-            transcript_snapshot,
-            state.session,
-        )
     else:
         transcript_body = f"{render_status_line(None)}\n\nType /help for commands."
-    buf.append(
-        render_panel(
-            "session feed",
-            transcript_body,
-            right_title=f"{len(transcript_snapshot)} events",
-            min_body_lines=body_lines,
-        )
+    feed_position = (
+        "live"
+        if state.transcript_follow_tail
+        else f"scroll {state.transcript_scroll_offset}"
     )
+    feed_panel = render_panel(
+        "session feed",
+        transcript_body,
+        right_title=f"{len(transcript_snapshot)} events · {feed_position}",
+        min_body_lines=body_lines,
+    )
+    buf.append(_render_scrolling_workspace_view(args, state, feed_panel, workspace_scroll))
     buf.append("\n\n")
 
     # Prompt

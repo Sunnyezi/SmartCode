@@ -26,7 +26,16 @@ from minicode.tooling import ToolRegistry
 from minicode.turn_events import TurnEvent
 from minicode.tui.runtime_control import _ThrottledRenderer as RuntimeThrottledRenderer
 from minicode.tui.event_flow import _handle_event
-from minicode.tui.input_parser import KeyEvent
+from minicode.tui.input_parser import KeyEvent, parse_input_chunk
+import minicode.tui.navigation as navigation_module
+from minicode.tui.navigation import (
+    _follow_transcript_tail,
+    _get_max_transcript_scroll_offset,
+    _get_transcript_body_lines,
+    _is_session_feed_compact,
+    _resume_transcript_following,
+    _scroll_transcript_by,
+)
 from minicode.tui.renderer import _decorate_session_feed_body
 from minicode.tui.session_flow import (
     build_tty_runtime_state,
@@ -40,6 +49,115 @@ from minicode.tui.types import TranscriptEntry
 
 def test_tty_app_uses_runtime_control_throttled_renderer() -> None:
     assert _ThrottledRenderer is RuntimeThrottledRenderer
+
+
+def _feed_navigation_args() -> SimpleNamespace:
+    return SimpleNamespace(
+        runtime=None,
+        cwd="/workspace",
+        messages=[],
+        permissions=SimpleNamespace(get_summary=lambda: "none"),
+        tools=SimpleNamespace(get_skills=lambda: [], get_mcp_servers=lambda: []),
+    )
+
+
+def test_session_feed_reclaims_workspace_rows_only_after_content_accumulates(monkeypatch) -> None:
+    monkeypatch.setattr(navigation_module, "_cached_terminal_size", lambda: (100, 40))
+    args = _feed_navigation_args()
+    startup_height = _get_transcript_body_lines(args, ScreenState())
+    state = ScreenState(
+        transcript=[TranscriptEntry(id=1, kind="assistant", body="short")],
+        transcript_revision=1,
+    )
+
+    active_feed_height = _get_transcript_body_lines(args, state)
+    assert _is_session_feed_compact(state) is False
+    assert active_feed_height == startup_height
+
+    state.transcript_follow_tail = False
+    assert _is_session_feed_compact(state) is False
+    assert _get_transcript_body_lines(args, state) == startup_height
+
+    state.transcript.extend(
+        TranscriptEntry(id=index, kind="assistant", body=f"response {index}")
+        for index in range(2, 12)
+    )
+    state.transcript_revision += 1
+
+    assert _is_session_feed_compact(state) is True
+    assert _get_transcript_body_lines(args, state) > startup_height
+
+    state.transcript_follow_tail = True
+    expanded_height = _get_transcript_body_lines(args, state)
+    state.transcript_follow_tail = False
+    assert _get_transcript_body_lines(args, state) == expanded_height
+
+
+def test_scrolling_pauses_live_follow_until_user_returns_to_tail(monkeypatch) -> None:
+    monkeypatch.setattr(navigation_module, "_cached_terminal_size", lambda: (100, 30))
+    args = _feed_navigation_args()
+    state = ScreenState(
+        transcript=[
+            TranscriptEntry(id=index, kind="assistant", body=f"response {index}")
+            for index in range(1, 12)
+        ],
+        transcript_revision=1,
+    )
+
+    assert _scroll_transcript_by(args, state, 3) is True
+    assert state.transcript_follow_tail is False
+    offset_while_reading = state.transcript_scroll_offset
+
+    _follow_transcript_tail(state)
+    assert state.transcript_scroll_offset == offset_while_reading
+
+    _resume_transcript_following(state)
+    assert state.transcript_follow_tail is True
+    assert state.transcript_scroll_offset == 0
+
+
+def test_workspace_is_an_extra_scroll_range_above_transcript_history(monkeypatch) -> None:
+    monkeypatch.setattr(navigation_module, "_cached_terminal_size", lambda: (100, 30))
+    args = _feed_navigation_args()
+    state = ScreenState(
+        transcript=[
+            TranscriptEntry(id=index, kind="assistant", body=f"response {index}")
+            for index in range(1, 12)
+        ],
+        transcript_revision=1,
+    )
+    transcript_top = navigation_module._get_transcript_content_max_scroll_offset(args, state)
+    workspace_top = _get_max_transcript_scroll_offset(args, state)
+
+    assert transcript_top > 0
+    assert workspace_top > transcript_top
+
+
+def test_mouse_wheel_routes_to_session_feed_scroll(monkeypatch) -> None:
+    monkeypatch.setattr(navigation_module, "_cached_terminal_size", lambda: (100, 30))
+    wheel_event = parse_input_chunk("\x1b[<64;12;8M").events[0]
+    state = ScreenState(
+        transcript=[
+            TranscriptEntry(id=index, kind="assistant", body=f"response {index}")
+            for index in range(1, 12)
+        ],
+        transcript_revision=1,
+    )
+    renders: list[bool] = []
+
+    _handle_event(
+        _feed_navigation_args(),
+        state,
+        wheel_event,
+        lambda: renders.append(True),
+        __import__("threading").Event(),
+        {},
+        lambda *_args, **_kwargs: False,
+    )
+
+    assert renders == [True]
+    assert state.transcript_scroll_offset > 0
+    assert state.transcript_follow_tail is False
 
 
 def test_summarize_tool_output_prefers_first_meaningful_line() -> None:

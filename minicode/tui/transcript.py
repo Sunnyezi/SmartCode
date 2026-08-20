@@ -474,6 +474,31 @@ def _compute_total_lines(entries: list[TranscriptEntry], revision: int | None = 
     return _build_transcript_layout(entries, revision).total_lines
 
 
+def _get_preamble_lines(preamble: str | None) -> list[str]:
+    """Wrap session metadata exactly as transcript rows are wrapped."""
+    if not preamble:
+        return []
+    width = _transcript_panel_width()
+    lines: list[str] = []
+    for logical_line in preamble.splitlines():
+        lines.extend(_wrap_panel_body_line(logical_line, width))
+    return lines
+
+
+def get_transcript_total_line_count(
+    entries: list[TranscriptEntry],
+    revision: int | None = None,
+    *,
+    preamble: str | None = None,
+) -> int:
+    """Return all visual feed rows, including optional session metadata."""
+    preamble_lines = _get_preamble_lines(preamble)
+    transcript_lines = _compute_total_lines(entries, revision)
+    if preamble_lines and transcript_lines:
+        return len(preamble_lines) + 1 + transcript_lines
+    return len(preamble_lines) + transcript_lines
+
+
 def _render_visible_window(
     entries: list[TranscriptEntry],
     start_line: int,
@@ -521,10 +546,10 @@ def get_transcript_max_scroll_offset(
     entries: list[TranscriptEntry],
     window_size: int | None = None,
     revision: int | None = None,
+    *,
+    preamble: str | None = None,
 ) -> int:
-    if not entries:
-        return 0
-    total = _compute_total_lines(entries, revision)
+    total = get_transcript_total_line_count(entries, revision, preamble=preamble)
     ws = get_transcript_window_size(window_size)
     return max(0, total - ws)
 
@@ -534,39 +559,56 @@ def render_transcript(
     scroll_offset: int,
     window_size: int | None = None,
     revision: int | None = None,
+    *,
+    preamble: str | None = None,
 ) -> str:
-    """Render a windowed view of the transcript. O(visible)."""
-    t = theme()
-    if not entries:
+    """Render a windowed view of the complete session-feed document.
+
+    ``preamble`` is session metadata such as readiness and runtime summaries.
+    It intentionally scrolls with the transcript so every visible line counts
+    toward the viewport and scroll range.
+    """
+    preamble_lines = _get_preamble_lines(preamble)
+    if not entries and not preamble_lines:
         return ""
 
     layout = _build_transcript_layout(entries, revision)
-    total_lines = layout.total_lines
+    transcript_base = len(preamble_lines) + (1 if preamble_lines and entries else 0)
+    total_lines = transcript_base + layout.total_lines
     ws = get_transcript_window_size(window_size)
     max_offset = max(0, total_lines - ws)
     offset = max(0, min(scroll_offset, max_offset))
 
+    def visible_window(start: int, end: int) -> list[str]:
+        visible: list[str] = []
+        if preamble_lines and start < len(preamble_lines):
+            visible.extend(preamble_lines[max(0, start) : min(end, len(preamble_lines))])
+
+        if preamble_lines and entries and start <= len(preamble_lines) < end:
+            visible.append("")
+
+        transcript_start = max(0, start - transcript_base)
+        transcript_end = max(0, end - transcript_base)
+        if entries and transcript_end > transcript_start:
+            visible.extend(
+                _render_visible_window(entries, transcript_start, transcript_end, revision)
+            )
+        return visible
+
     if offset == 0:
         end = total_lines
         start = max(0, end - ws)
-        visible_lines = _render_visible_window(entries, start, end, revision)
+        visible_lines = visible_window(start, end)
         body = "\n".join(visible_lines)
         scrollbar = _render_scrollbar(offset, max_offset, len(visible_lines))
         return _interleave_scrollbar(body, scrollbar)
 
-    content_ws = max(1, ws - 1)
     end = total_lines - offset
-    start = max(0, end - content_ws)
-    visible_lines = _render_visible_window(entries, start, end, revision)
+    start = max(0, end - ws)
+    visible_lines = visible_window(start, end)
     body = "\n".join(visible_lines)
     scrollbar = _render_scrollbar(offset, max_offset, len(visible_lines))
-
-    indicator = (
-        f"{body}\n"
-        f"{t.subtle}  {ICON_DIVIDER * 2} scroll {offset}/{max_offset} "
-        f"(PgUp/PgDn or scroll){ICON_DIVIDER * 2}{t.reset}"
-    )
-    return _interleave_scrollbar(indicator, scrollbar)
+    return _interleave_scrollbar(body, scrollbar)
 
 
 # 8-segment Unicode blocks for sub-character scrollbar precision

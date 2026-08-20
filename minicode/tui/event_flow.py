@@ -238,10 +238,12 @@ def _handle_normal_mode_key(
     if event.name == "home" and event.ctrl:
         from minicode.tui.navigation import _get_max_transcript_scroll_offset
         state.transcript_scroll_offset = _get_max_transcript_scroll_offset(args, state)
+        state.transcript_follow_tail = False
         rerender()
         return True
     if event.name == "end" and event.ctrl:
         state.transcript_scroll_offset = 0
+        state.transcript_follow_tail = True
         rerender()
         return True
 

@@ -6,7 +6,10 @@ from minicode.tui.tool_lifecycle import (
     _update_tool_entry,
     _update_transcript_entry,
 )
-from minicode.tui.transcript import render_transcript
+from minicode.tui.transcript import (
+    get_transcript_max_scroll_offset,
+    render_transcript,
+)
 import minicode.tui.transcript as transcript_module
 from minicode.tui.types import TranscriptEntry
 
@@ -98,3 +101,27 @@ def test_entry_cache_uses_full_render_state_key() -> None:
 
     assert "second body" in rendered
     assert "first body" not in rendered
+
+
+def test_session_preamble_is_in_the_transcript_scroll_range() -> None:
+    entries = [TranscriptEntry(id=1, kind="assistant", body="latest response")]
+    preamble = "runtime-summary: phase:explore@1\nreadiness-summary: ready"
+    max_offset = get_transcript_max_scroll_offset(
+        entries,
+        window_size=4,
+        preamble=preamble,
+    )
+
+    assert max_offset > 0
+    tail = render_transcript(entries, scroll_offset=0, window_size=4, preamble=preamble)
+    top = render_transcript(
+        entries,
+        scroll_offset=max_offset,
+        window_size=4,
+        preamble=preamble,
+    )
+
+    assert "latest response" in tail
+    assert "runtime-summary" not in tail
+    assert "runtime-summary" in top
+    assert "readiness-summary" in top

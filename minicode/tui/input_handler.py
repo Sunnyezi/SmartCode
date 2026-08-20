@@ -17,6 +17,7 @@ from minicode.tooling import ToolContext
 from minicode.types import RuntimeEvent
 from minicode.turn_events import TurnEvent, TurnEventQueue
 from minicode.tui.session_flow import refresh_tty_session_snapshot
+from minicode.tui.navigation import _follow_transcript_tail, _resume_transcript_following
 from minicode.tui.tool_helpers import _summarize_tool_input, _is_file_edit_tool, _extract_path_from_tool_input, _summarize_collapsed_tool_body
 from minicode.tui.tool_lifecycle import _push_transcript_entry, _update_tool_entry, _update_transcript_entry, _append_to_transcript_entry, _collapse_tool_entry, _finalize_dangling_running_tools, _get_running_tool_entries, _schedule_tool_auto_collapse
 
@@ -237,6 +238,7 @@ def _execute_tool_shortcut(
     tool_input: Any,
     rerender: Callable[[], None],
 ) -> None:
+    _resume_transcript_following(state)
     state.is_busy = True
     state.status = f"Running {tool_name}..."
     state.active_tool = tool_name
@@ -266,7 +268,7 @@ def _execute_tool_shortcut(
         output = result.output if result.ok else f"ERROR: {result.output}"
         _update_tool_entry(state, entry_id, "success" if result.ok else "error", output)
         _collapse_tool_entry(state, entry_id, _summarize_collapsed_tool_body(output))
-        state.transcript_scroll_offset = 0
+        _follow_transcript_tail(state)
     finally:
         state.is_busy = False
         state.active_tool = None
@@ -304,6 +306,11 @@ def _handle_input(
         return False
     if input_text == "/exit":
         return True
+
+    # A new command is an explicit request to return to the live edge.  Output
+    # emitted after that point follows the tail; output from an existing turn
+    # leaves a user who scrolled up exactly where they were reading.
+    _resume_transcript_following(state)
 
     memory_mgr = getattr(args, "memory_manager", None)
     if memory_mgr is not None:
@@ -392,7 +399,7 @@ def _handle_input(
 
     # Agent turn
     _push_transcript_entry(state, kind="user", body=input_text)
-    state.transcript_scroll_offset = 0
+    _follow_transcript_tail(state)
     state.status = "Thinking..."
     state.is_busy = True
     
@@ -450,7 +457,7 @@ def _handle_input(
             active_stream_entry_id = _push_transcript_entry(state, kind="assistant", body=content)
         else:
             _append_to_transcript_entry(state, active_stream_entry_id, content)
-        state.transcript_scroll_offset = 0
+        _follow_transcript_tail(state)
         rerender()
 
     def on_assistant_message(content: str) -> None:
@@ -467,7 +474,7 @@ def _handle_input(
             active_stream_entry_id = None
         else:
             _push_transcript_entry(state, kind="assistant", body=content)
-        state.transcript_scroll_offset = 0
+        _follow_transcript_tail(state)
         rerender()
 
     def on_progress_message(content: str) -> None:
@@ -501,7 +508,7 @@ def _handle_input(
                 runtimeStopReason=None,
                 runtimeVerificationFocus=None,
             )
-        state.transcript_scroll_offset = 0
+        _follow_transcript_tail(state)
         rerender()
 
     def on_runtime_event(event: RuntimeEvent) -> None:
@@ -533,7 +540,7 @@ def _handle_input(
                 runtimeStopReason=event.stop_reason or None,
                 runtimeVerificationFocus=event.verification_focus or None,
             )
-        state.transcript_scroll_offset = 0
+        _follow_transcript_tail(state)
         rerender()
 
     def on_tool_start(tool_name: str, tool_input: Any) -> None:
@@ -586,7 +593,7 @@ def _handle_input(
             )
 
         pending_tool_entries[tool_name].append(entry_id)
-        state.transcript_scroll_offset = 0
+        _follow_transcript_tail(state)
         rerender()
 
     def on_tool_result(tool_name: str, output: str, is_error: bool) -> None:
@@ -676,7 +683,7 @@ def _handle_input(
             state.status = f"{remaining} tool(s) still running..."
         else:
             state.status = None
-        state.transcript_scroll_offset = 0
+        _follow_transcript_tail(state)
         rerender()
 
     args.permissions.begin_turn()
@@ -691,7 +698,7 @@ def _handle_input(
             )
         else:
             _append_to_transcript_entry(state, active_thinking_entry_id, content)
-        state.transcript_scroll_offset = 0
+        _follow_transcript_tail(state)
         rerender()
 
     # Rust's TUI keeps the agent core on a worker and sends turn events over

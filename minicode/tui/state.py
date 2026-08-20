@@ -54,6 +54,9 @@ class ScreenState:
     cursor_offset: int = 0
     transcript: list[TranscriptEntry] = field(default_factory=list)
     transcript_scroll_offset: int = 0
+    # True while the user is viewing the latest event.  Scrolling upward turns
+    # this off so streamed tool/assistant output cannot yank the feed away.
+    transcript_follow_tail: bool = True
     transcript_revision: int = 0
     selected_slash_index: int = 0
     status: str | None = None
